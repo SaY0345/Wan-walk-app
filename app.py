@@ -3,8 +3,8 @@ from __future__ import annotations
 import matplotlib.pyplot as plt
 import pandas as pd
 import streamlit as st
-import matplotlib.pyplot as plt
 import matplotlib
+import plotly.graph_objects as go
 
 from model import AsphaltModelConfig, estimate_asphalt_temperature, find_recommended_windows
 from weather import WeatherRequest, fetch_hourly_weather
@@ -83,51 +83,69 @@ else:
 
 st.subheader("アスファルト温度予測グラフ")
 
-fig, ax = plt.subplots(figsize=(12, 5))
-ax.plot(
-    display_df["time"],
-    display_df["air_temp_c"],
-    marker="o",
-    linewidth=2,
-    color="#1976D2",
-    label="Air temp",
-)
-
-ax.plot(
-    display_df["time"],
-    display_df["asphalt_temp_c"],
-    marker="o",
-    linewidth=2.8,
-    color="#E65100",
-    label="Asphalt temperature forecast",
-)
+fig = go.Figure()
 
 # 判定帯
-ax.axhspan(0, 30, color="#E8F5E9", alpha=0.35, label="Safe")
-ax.axhspan(30, 40, color="#FFF9C4", alpha=0.45, label="Caution")
-ax.axhspan(40, 55, color="#FFE0B2", alpha=0.50, label="Danger")
-ax.axhspan(55, 90, color="#FFCDD2", alpha=0.55, label="Very Dangerous")
+fig.add_hrect(y0=0, y1=30, fillcolor="#E8F5E9", opacity=0.35, line_width=0)
+fig.add_hrect(y0=30, y1=40, fillcolor="#FFF9C4", opacity=0.45, line_width=0)
+fig.add_hrect(y0=40, y1=55, fillcolor="#FFE0B2", opacity=0.50, line_width=0)
+fig.add_hrect(y0=55, y1=90, fillcolor="#FFCDD2", opacity=0.55, line_width=0)
 
 # 境界線
-ax.axhline(30, color="#66BB6A", linestyle="--", linewidth=1.2, alpha=0.8)
-ax.axhline(40, color="#F9A825", linestyle="--", linewidth=1.2, alpha=0.8)
-ax.axhline(55, color="#E53935", linestyle="--", linewidth=1.2, alpha=0.8)
+fig.add_hline(y=30, line_dash="dash", line_color="#66BB6A", line_width=1)
+fig.add_hline(y=40, line_dash="dash", line_color="#F9A825", line_width=1)
+fig.add_hline(y=55, line_dash="dash", line_color="#E53935", line_width=1)
 
-ax.set_xlabel("Time")
-ax.set_ylabel("Temperature (°C)")
+# 気温
+fig.add_trace(
+    go.Scatter(
+        x=display_df["time"],
+        y=display_df["air_temp_c"],
+        mode="lines+markers",
+        name="Air temp",
+        line=dict(color="#1976D2", width=2),
+        marker=dict(size=6),
+    )
+)
+
+# 推定アスファルト温度
+fig.add_trace(
+    go.Scatter(
+        x=display_df["time"],
+        y=display_df["asphalt_temp_c"],
+        mode="lines+markers",
+        name="Asphalt temperature forecast",
+        line=dict(color="#E65100", width=3),
+        marker=dict(size=6),
+    )
+)
+
 y_min = min(display_df["air_temp_c"].min(), display_df["asphalt_temp_c"].min()) - 5
 y_max = max(display_df["air_temp_c"].max(), display_df["asphalt_temp_c"].max()) + 5
 
-# 判定帯の境界が必要なら少しだけ含める
 y_min = max(0, y_min)
 y_max = max(y_max, 40)
 
-ax.set_ylim(y_min, y_max)
-ax.grid(True, alpha=0.3)
-ax.legend(loc="upper left", framealpha=0.75)
-fig.autofmt_xdate()
+fig.update_layout(
+    xaxis_title="Time",
+    yaxis_title="Temperature (°C)",
+    yaxis=dict(range=[y_min, y_max]),
+    legend=dict(
+        orientation="h",
+        yanchor="bottom",
+        y=1.02,
+        xanchor="left",
+        x=0,
+    ),
+    margin=dict(l=10, r=10, t=40, b=10),
+    height=420,
+)
 
-st.pyplot(fig)
+fig.update_xaxes(
+    rangeslider=dict(visible=True),
+)
+
+st.plotly_chart(fig, width="stretch")
 
 with st.expander("時間別データを見る"):
     st.dataframe(
