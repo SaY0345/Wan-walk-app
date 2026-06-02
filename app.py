@@ -130,6 +130,8 @@ fig.update_layout(
     xaxis_title="Time",
     yaxis_title="Temperature (°C)",
     yaxis=dict(range=[y_min, y_max]),
+    height=350,
+    dragmode="pan",
     legend=dict(
         orientation="h",
         yanchor="bottom",
@@ -138,7 +140,7 @@ fig.update_layout(
         x=0,
     ),
     margin=dict(l=10, r=10, t=40, b=10),
-    height=420,
+    #height=420,
 )
 
 #fig.update_xaxes(
