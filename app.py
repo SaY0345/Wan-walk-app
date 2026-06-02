@@ -141,9 +141,9 @@ fig.update_layout(
     height=420,
 )
 
-fig.update_xaxes(
-    rangeslider=dict(visible=True),
-)
+#fig.update_xaxes(
+#    rangeslider=dict(visible=True),
+#)
 
 st.plotly_chart(fig, width="stretch")
 
