@@ -99,22 +99,22 @@ ax.plot(
     marker="o",
     linewidth=2.8,
     color="#E65100",
-    label="推定アスファルト温度",
+    label="Asphalt temperature forecast",
 )
 
 # 判定帯
-ax.axhspan(0, 30, color="#E8F5E9", alpha=0.35, label="安全")
-ax.axhspan(30, 40, color="#FFF9C4", alpha=0.45, label="注意")
-ax.axhspan(40, 55, color="#FFE0B2", alpha=0.50, label="危険")
-ax.axhspan(55, 90, color="#FFCDD2", alpha=0.55, label="非常に危険")
+ax.axhspan(0, 30, color="#E8F5E9", alpha=0.35, label="Safe")
+ax.axhspan(30, 40, color="#FFF9C4", alpha=0.45, label="Caution")
+ax.axhspan(40, 55, color="#FFE0B2", alpha=0.50, label="Danger")
+ax.axhspan(55, 90, color="#FFCDD2", alpha=0.55, label="Very Dangerous")
 
 # 境界線
 ax.axhline(30, color="#66BB6A", linestyle="--", linewidth=1.2, alpha=0.8)
 ax.axhline(40, color="#F9A825", linestyle="--", linewidth=1.2, alpha=0.8)
 ax.axhline(55, color="#E53935", linestyle="--", linewidth=1.2, alpha=0.8)
 
-ax.set_xlabel("時刻")
-ax.set_ylabel("温度（℃）")
+ax.set_xlabel("Time")
+ax.set_ylabel("Temperature (°C)")
 y_min = min(display_df["air_temp_c"].min(), display_df["asphalt_temp_c"].min()) - 5
 y_max = max(display_df["air_temp_c"].max(), display_df["asphalt_temp_c"].max()) + 5
 
