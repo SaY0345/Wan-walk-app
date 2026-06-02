@@ -90,7 +90,7 @@ ax.plot(
     marker="o",
     linewidth=2,
     color="#1976D2",
-    label="気温",
+    label="Air temp",
 )
 
 ax.plot(
