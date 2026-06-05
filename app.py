@@ -18,13 +18,16 @@ st.set_page_config(
     layout="wide",
 )
 
-st.title("犬の散歩用アスファルト温度予測")
-st.caption("気象予報から、アスファルト路面温度を安全寄りに推定します。")
+location_name = "横須賀市"
+
+st.title("🐕 Wan Walk")
+st.caption("犬の散歩向け・路面温度予測")
+st.caption(f"📍 {location_name}")
 
 latitude = 35.2813
 longitude = 139.6722
 forecast_days = 2
-max_walk_temp = 35.0
+max_walk_temp = 30.0
 
 #with st.sidebar:
     #st.header("地点設定")
@@ -64,22 +67,72 @@ except Exception as exc:
 now = pd.Timestamp.now(tz="Asia/Tokyo").tz_localize(None)
 display_df = result_df[result_df["time"] >= now.floor("h")].copy()
 
+current = display_df.iloc[0]
+
+current_air = current["air_temp_c"]
+current_asphalt = current["asphalt_temp_c"]
+current_risk = current["risk_level"]
+current_judgement = current["walk_judgement"]
+current_time = current["time"].strftime("%m/%d %H:%M")
+
+st.subheader(f"🐾 現在の状況（{current_time}時点）")
+
+from datetime import date
+
+col1, col2 = st.columns(2)
+
+with col1:
+    st.metric("🌡 現在の気温", f"{current_air:.1f}℃")
+
+with col2:
+    st.metric("🐾 現在の推定路面温度", f"{current_asphalt:.1f}℃")
+
+if current_risk == "安全":
+    st.success("🐾 今なら散歩しやすい")
+elif current_risk == "注意":
+    st.warning("🐾 短時間の散歩なら可")
+elif current_risk == "危険":
+    st.error("🐾 路面温度に注意")
+else:
+    st.error("🐾 散歩はおすすめしません")
+
+today_df = display_df[
+    display_df["time"].dt.date == date.today()
+]
+
+today_max = today_df["asphalt_temp_c"].max()
+today_min = today_df["asphalt_temp_c"].min()
+
+st.subheader("📊 今日の路面温度予想")
+
+col1, col2 = st.columns(2)
+
+with col1:
+    st.metric(
+        "🔥 最高",
+        f"{today_max:.1f}℃"
+    )
+
+with col2:
+    st.metric(
+        "❄️ 最低",
+        f"{today_min:.1f}℃"
+    )
+
 latest = display_df.iloc[0]
 
-col1, col2, col3, col4 = st.columns(4)
-col1.metric("現在以降の最初の気温", f"{latest['air_temp_c']:.1f}℃")
-col2.metric("推定路面温度", f"{latest['asphalt_temp_c']:.1f}℃")
-col3.metric("判定", latest["risk_level"])
-col4.metric("散歩目安", latest["walk_judgement"])
+st.subheader("🐕 おすすめ散歩時間")
 
-st.subheader("推奨散歩時間帯")
-windows = find_recommended_windows(display_df, max_temp_c=max_walk_temp)
+windows = find_recommended_windows(
+    display_df,
+    max_temp_c=max_walk_temp,
+)
 
 if windows:
-    for window in windows:
-        st.success(window)
+    for w in windows:
+        st.success(f"🐾 {w}")
 else:
-    st.warning("指定した上限温度未満の時間帯がありません。早朝・夜間、または実測確認を検討してください。")
+    st.error("推奨できる時間帯はありません")
 
 st.subheader("アスファルト温度予測グラフ")
 
@@ -124,14 +177,18 @@ y_min = min(display_df["air_temp_c"].min(), display_df["asphalt_temp_c"].min()) 
 y_max = max(display_df["air_temp_c"].max(), display_df["asphalt_temp_c"].max()) + 5
 
 y_min = max(0, y_min)
-y_max = max(y_max, 40)
+y_max = min(60, max(y_max, 40))
 
 fig.update_layout(
-    xaxis_title="Time",
-    yaxis_title="Temperature (°C)",
-    yaxis=dict(range=[y_min, y_max]),
-    height=350,
+    yaxis=dict(
+        range=[y_min, y_max]
+    )
+)
+
+fig.update_layout(
+    height=360,
     dragmode="pan",
+    margin=dict(l=10, r=10, t=30, b=10),
     legend=dict(
         orientation="h",
         yanchor="bottom",
@@ -139,34 +196,46 @@ fig.update_layout(
         xanchor="left",
         x=0,
     ),
-    margin=dict(l=10, r=10, t=40, b=10),
-    #height=420,
 )
 
-#fig.update_xaxes(
-#    rangeslider=dict(visible=True),
-#)
+initial_hours = 8
+
+fig.update_xaxes(
+    range=[
+        display_df["time"].iloc[0],
+        display_df["time"].iloc[min(initial_hours, len(display_df) - 1)],
+    ],
+    tickformat="%H:%M",
+)
+
+fig.update_layout(
+    dragmode="pan",
+)
 
 st.plotly_chart(fig, width="stretch")
 
+detail_df = display_df[
+    [
+        "time",
+        "air_temp_c",
+        "asphalt_temp_c",
+        "risk_level",
+        "walk_judgement",
+    ]
+].copy()
+
+detail_df = detail_df.rename(
+    columns={
+        "time": "時刻",
+        "air_temp_c": "気温",
+        "asphalt_temp_c": "路面温度",
+        "risk_level": "判定",
+        "walk_judgement": "散歩目安",
+    }
+)
+
 with st.expander("時間別データを見る"):
-    st.dataframe(
-        display_df[
-            [
-                "time",
-                "air_temp_c",
-                "asphalt_temp_c",
-                "risk_level",
-                "walk_judgement",
-                "humidity_pct",
-                "precip_mm",
-                "cloud_cover_pct",
-                "wind_speed_kmh",
-                "shortwave_radiation_wm2",
-            ]
-        ],
-        width="stretch",
-    )
+    st.dataframe(detail_df, width="stretch")
 
 st.info(
     "この推定は実測値ではありません。特に夏場は、実際の路面を手で触るか赤外線温度計で確認してください。"

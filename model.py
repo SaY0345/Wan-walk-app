@@ -147,11 +147,11 @@ def walk_judgement(temp_c: float) -> str:
     return "原則避ける"
 
 
-def find_recommended_windows(df: pd.DataFrame, max_temp_c: float = 35.0) -> list[str]:
+def find_recommended_windows(df: pd.DataFrame, max_temp_c: float = 30.0) -> list[str]:
     """
-    推定アスファルト温度が指定値未満の連続時間帯を抽出する。
+    推定アスファルト温度が指定値以下の連続時間帯を抽出する。
     """
-    safe = df[df["asphalt_temp_c"] < max_temp_c].copy()
+    safe = df[df["asphalt_temp_c"] <= max_temp_c].copy()
     if safe.empty:
         return []
 
@@ -167,12 +167,18 @@ def find_recommended_windows(df: pd.DataFrame, max_temp_c: float = 35.0) -> list
 
         # 1時間連続していなければ区切る
         if (t - prev).total_seconds() > 3600 * 1.5:
-            windows.append(f"{start:%m/%d %H:%M}〜{prev:%H:%M}")
+            if start.date() == prev.date():
+                windows.append(f"{start:%m/%d %H:%M}〜{prev:%H:%M}")
+            else:
+                windows.append(f"{start:%m/%d %H:%M}〜{prev:%m/%d %H:%M}")
             start = t
 
         prev = t
 
     if start is not None and prev is not None:
-        windows.append(f"{start:%m/%d %H:%M}〜{prev:%H:%M}")
+        if start.date() == prev.date():
+            windows.append(f"{start:%m/%d %H:%M}〜{prev:%H:%M}")
+        else:
+            windows.append(f"{start:%m/%d %H:%M}〜{prev:%m/%d %H:%M}")
 
     return windows
