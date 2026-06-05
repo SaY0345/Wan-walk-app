@@ -5,7 +5,7 @@ import streamlit as st
 import requests
 
 import plotly.graph_objects as go
-from streamlit_geolocation import streamlit_geolocation
+#from streamlit_geolocation import streamlit_geolocation
 
 from model import AsphaltModelConfig, estimate_asphalt_temperature, find_recommended_windows
 from weather import WeatherRequest, fetch_hourly_weather
@@ -70,24 +70,24 @@ locations = {
 
 st.subheader("📍 地点設定")
 
-use_current_location = st.checkbox("現在地を使う")
+#use_current_location = st.checkbox("現在地を使う")
 
-if use_current_location:
-    location = streamlit_geolocation()
+#if use_current_location:
+#    location = streamlit_geolocation()#
 
-    if location and location.get("latitude") and location.get("longitude"):
-        latitude = location["latitude"]
-        longitude = location["longitude"]
-        location_name = f"{reverse_geocode(latitude, longitude)}（現在地）"
-    else:
-        st.info("位置情報の取得を許可してください。取得できない場合は地点選択を使います。")
-        location_name = st.selectbox("地点を選択", list(locations.keys()), index=0)
-        latitude = locations[location_name]["lat"]
-        longitude = locations[location_name]["lon"]
-else:
-    location_name = st.selectbox("地点を選択", list(locations.keys()), index=0)
-    latitude = locations[location_name]["lat"]
-    longitude = locations[location_name]["lon"]
+#    if location and location.get("latitude") and location.get("longitude"):
+#        latitude = location["latitude"]
+#        longitude = location["longitude"]
+#        location_name = f"{reverse_geocode(latitude, longitude)}（現在地）"
+#    else:
+#        st.info("位置情報の取得を許可してください。取得できない場合は地点選択を使います。")
+#        location_name = st.selectbox("地点を選択", list(locations.keys()), index=0)
+#        latitude = locations[location_name]["lat"]
+#        longitude = locations[location_name]["lon"]
+#else:
+#    location_name = st.selectbox("地点を選択", list(locations.keys()), index=0)
+#    latitude = locations[location_name]["lat"]
+#    longitude = locations[location_name]["lon"]
 
 forecast_days = 2
 max_walk_temp = 30.0
