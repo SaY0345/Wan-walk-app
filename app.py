@@ -1,16 +1,59 @@
 from __future__ import annotations
 
-import matplotlib.pyplot as plt
 import pandas as pd
 import streamlit as st
-import matplotlib
+import requests
+
 import plotly.graph_objects as go
+from streamlit_geolocation import streamlit_geolocation
 
 from model import AsphaltModelConfig, estimate_asphalt_temperature, find_recommended_windows
 from weather import WeatherRequest, fetch_hourly_weather
 
-matplotlib.rcParams["font.family"] = "Meiryo"
-matplotlib.rcParams["axes.unicode_minus"] = False
+def reverse_geocode(lat: float, lon: float) -> str:
+    url = "https://nominatim.openstreetmap.org/reverse"
+
+    params = {
+        "lat": lat,
+        "lon": lon,
+        "format": "json",
+        "zoom": 10,
+        "addressdetails": 1,
+    }
+
+    headers = {
+        "User-Agent": "WanWalkApp"
+    }
+
+    try:
+        response = requests.get(
+            url,
+            params=params,
+            headers=headers,
+            timeout=10,
+        )
+        response.raise_for_status()
+        data = response.json()
+
+        address = data.get("address", {})
+
+        return (
+            address.get("city")
+            or address.get("town")
+            or address.get("village")
+            or address.get("municipality")
+            or address.get("county")
+            or address.get("state_district")
+            or address.get("state")
+            or data.get("display_name")
+            or "現在地"
+        )
+
+    #except Exception:
+    #    return "現在地"
+    except Exception as e:
+        st.error(f"逆ジオコーディングに失敗しました: {e}")
+        return "現在地"
 
 st.set_page_config(
     page_title="犬の散歩用アスファルト温度予測",
@@ -18,16 +61,40 @@ st.set_page_config(
     layout="wide",
 )
 
-location_name = "横須賀市"
+locations = {
+    "横須賀市": {"lat": 35.2813, "lon": 139.6722},
+    "横浜市": {"lat": 35.4437, "lon": 139.6380},
+    "鎌倉市": {"lat": 35.3192, "lon": 139.5467},
+    "藤沢市": {"lat": 35.3392, "lon": 139.4900},
+}
+
+st.subheader("📍 地点設定")
+
+use_current_location = st.checkbox("現在地を使う")
+
+if use_current_location:
+    location = streamlit_geolocation()
+
+    if location and location.get("latitude") and location.get("longitude"):
+        latitude = location["latitude"]
+        longitude = location["longitude"]
+        location_name = f"{reverse_geocode(latitude, longitude)}（現在地）"
+    else:
+        st.info("位置情報の取得を許可してください。取得できない場合は地点選択を使います。")
+        location_name = st.selectbox("地点を選択", list(locations.keys()), index=0)
+        latitude = locations[location_name]["lat"]
+        longitude = locations[location_name]["lon"]
+else:
+    location_name = st.selectbox("地点を選択", list(locations.keys()), index=0)
+    latitude = locations[location_name]["lat"]
+    longitude = locations[location_name]["lon"]
+
+forecast_days = 2
+max_walk_temp = 30.0
 
 st.title("🐕 Wan Walk")
 st.caption("犬の散歩向け・路面温度予測")
 st.caption(f"📍 {location_name}")
-
-latitude = 35.2813
-longitude = 139.6722
-forecast_days = 2
-max_walk_temp = 30.0
 
 #with st.sidebar:
     #st.header("地点設定")
@@ -95,6 +162,27 @@ elif current_risk == "危険":
     st.error("🐾 路面温度に注意")
 else:
     st.error("🐾 散歩はおすすめしません")
+
+now_time = pd.Timestamp.now()
+
+future_safe_df = display_df[
+    (display_df["time"] > now_time)
+    & (display_df["asphalt_temp_c"] <= max_walk_temp)
+]
+
+if current_asphalt <= max_walk_temp:
+    st.info("このあともしばらく散歩しやすい予想です")
+elif not future_safe_df.empty:
+    next_safe_time = future_safe_df.iloc[0]["time"]
+    hours_until = (next_safe_time - now_time).total_seconds() / 3600
+
+    st.info(
+        f"次に{max_walk_temp:.0f}℃以下になる予想："
+        f"{next_safe_time:%H:%M}頃\n\n"
+        f"あと約{hours_until:.1f}時間"
+    )
+else:
+    st.warning("予報期間内に散歩しやすい時間帯は見つかりません")
 
 today_df = display_df[
     display_df["time"].dt.date == date.today()
