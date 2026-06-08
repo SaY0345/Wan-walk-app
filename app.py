@@ -143,7 +143,7 @@ config = AsphaltModelConfig(
     #safety_margin_c=safety_margin_c,
 )
 
-@st.cache_data(ttl=1800)
+@st.cache_data(ttl=3600)
 def cached_fetch_hourly_weather(latitude: float, longitude: float, forecast_days: int):
     request = WeatherRequest(
         latitude=latitude,
@@ -160,8 +160,7 @@ try:
     )
     result_df = estimate_asphalt_temperature(weather_df, config)
 except Exception as exc:
-    st.error("気象データの取得または計算に失敗しました。")
-    st.exception(exc)
+    st.error("気象データを取得できませんでした。時間をおいて再度お試しください。")
     st.stop()
 
 # 現在以降だけ表示
