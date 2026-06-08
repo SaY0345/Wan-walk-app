@@ -29,6 +29,39 @@ html, body, [class*="css"] {
 .stApp {
     background-color: #F4FBF4;
 }
+            
+.block-container {
+    padding-top: 1rem;
+    padding-bottom: 1rem;
+}
+
+.stApp::before {
+    content: "🐾";
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 28rem;
+    color: #66BB6A;
+    opacity: 0.03;
+    z-index: 0;
+    pointer-events: none;
+}
+
+.block-container {
+    position: relative;
+    z-index: 1;
+}
+
+[data-testid="stVerticalBlockBorderWrapper"] {
+    border-radius: 20px !important;
+    background: rgba(255,255,255,0.75);
+}
+
+[data-testid="stVerticalBlockBorderWrapper"] {
+    border-radius: 20px !important;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.15) !important;
+}
 
 </style>
 """, unsafe_allow_html=True)
@@ -64,20 +97,37 @@ max_walk_temp = 30.0
 
 left, center, right = st.columns([1, 3, 1])
 
-st.title("🐕 Wan Walk")
+st.markdown("## Wan Walk")
 st.caption("犬の散歩向け・路面温度予測")
 
-with st.expander("📍 地点設定", expanded=False):
-    location_name = st.selectbox(
-        "📍 地点を選択",
-        list(locations.keys()),
-        index=0,
-    )
-    
-    latitude = locations[location_name]["lat"]
-    longitude = locations[location_name]["lon"]
+default_location = st.session_state.get("location_name", "横須賀市")
 
-st.caption(f"📍 {location_name}")
+st.markdown(
+    f"""
+    <div style="
+        text-align:center;
+        color:#5E7D5E;
+        font-size:1rem;
+        font-weight:600;
+        margin-top:-8px;
+        margin-bottom:12px;
+    ">
+        📍 {default_location}
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
+with st.expander("📍 地点変更", expanded=False):
+    location_name = st.selectbox(
+        "地点を選択",
+        list(locations.keys()),
+        index=list(locations.keys()).index(default_location),
+        key="location_name",
+    )
+
+latitude = locations[location_name]["lat"]
+longitude = locations[location_name]["lon"]
 
 request = WeatherRequest(
     latitude=latitude,
@@ -206,6 +256,7 @@ with col2:
     )
 
 st.subheader("🐕 おすすめ散歩時間")
+st.caption("路面温度が30℃以下になる時間帯です")
 
 windows = find_recommended_windows(
     display_df,
@@ -214,12 +265,13 @@ windows = find_recommended_windows(
 
 if windows:
     st.success(
-        f"🟢 次のおすすめ\n\n{windows[0]}"
+        f"🐾 次のおすすめ時間帯\n\n{windows[0]}"
     )
+
     if len(windows) > 1:
         with st.expander("その他のおすすめ時間帯"):
             for w in windows[1:]:
-                st.write(w)
+                st.write(f"🐾 {w}")
 else:
     st.error("推奨できる時間帯はありません")
 

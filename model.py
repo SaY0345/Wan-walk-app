@@ -165,12 +165,12 @@ def find_recommended_windows(df: pd.DataFrame, max_temp_c: float = 30.0) -> list
             prev = t
             continue
 
-        # 1時間連続していなければ区切る
-        if (t - prev).total_seconds() > 3600 * 1.5:
-            if start.date() == prev.date():
-                windows.append(f"{start:%m/%d %H:%M}〜{prev:%H:%M}")
-            else:
-                windows.append(f"{start:%m/%d %H:%M}〜{prev:%m/%d %H:%M}")
+       # 1時間連続していない、または日付が変わったら区切る
+        if (
+            (t - prev).total_seconds() > 3600 * 1.5
+            or t.date() != prev.date()
+        ):
+            windows.append(f"{start:%m/%d %H:%M}〜{prev:%H:%M}")
             start = t
 
         prev = t
