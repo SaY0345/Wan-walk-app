@@ -161,7 +161,7 @@ try:
     result_df = estimate_asphalt_temperature(weather_df, config)
 except Exception as exc:
     st.error("気象データを取得できませんでした。時間をおいて再度お試しください。")
-    st.exception(exc)
+    #st.exception(exc)
     st.stop()
 
 # 現在以降だけ表示
