@@ -13,9 +13,25 @@ from weather import WeatherRequest, fetch_hourly_weather
 
 st.set_page_config(
     page_title="犬の散歩用アスファルト温度予測",
-    page_icon="🐕",
+    page_icon="assets/shiba_logo.png",
     layout="wide",
 )
+
+st.markdown("""
+<style>
+
+@import url('https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;700&display=swap');
+
+html, body, [class*="css"] {
+    font-family: 'M PLUS Rounded 1c', sans-serif;
+}
+
+.stApp {
+    background-color: #F4FBF4;
+}
+
+</style>
+""", unsafe_allow_html=True)
 
 locations = {
     "横須賀市": {"lat": 35.2813, "lon": 139.6722},
@@ -48,15 +64,8 @@ max_walk_temp = 30.0
 
 left, center, right = st.columns([1, 3, 1])
 
-with center:
-    col_logo, col_title = st.columns([1, 4])
-
-    with col_logo:
-        st.image("assets/shiba_logo.png", width=80)
-
-    with col_title:
-        st.markdown("## Wan Walk")
-        st.caption("犬の散歩向け・路面温度予測")
+st.title("🐕 Wan Walk")
+st.caption("犬の散歩向け・路面温度予測")
 
 with st.expander("📍 地点設定", expanded=False):
     location_name = st.selectbox(
