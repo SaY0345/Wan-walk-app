@@ -143,7 +143,7 @@ config = AsphaltModelConfig(
     #safety_margin_c=safety_margin_c,
 )
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=21600)
 def cached_fetch_hourly_weather(latitude: float, longitude: float, forecast_days: int):
     request = WeatherRequest(
         latitude=latitude,
