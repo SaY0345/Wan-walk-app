@@ -13,7 +13,7 @@ from weather import WeatherRequest, fetch_hourly_weather
 
 st.set_page_config(
     page_title="犬の散歩用アスファルト温度予測",
-    page_icon="assets/shiba_logo.png",
+    page_icon="🐾",
     layout="wide",
 )
 
@@ -161,6 +161,7 @@ try:
     result_df = estimate_asphalt_temperature(weather_df, config)
 except Exception as exc:
     st.error("気象データを取得できませんでした。時間をおいて再度お試しください。")
+    st.exception(exc)
     st.stop()
 
 # 現在以降だけ表示
