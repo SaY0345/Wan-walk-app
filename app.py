@@ -2,58 +2,14 @@ from __future__ import annotations
 
 import pandas as pd
 import streamlit as st
-import requests
+#import requests
+from datetime import date
 
 import plotly.graph_objects as go
 #from streamlit_geolocation import streamlit_geolocation
 
 from model import AsphaltModelConfig, estimate_asphalt_temperature, find_recommended_windows
 from weather import WeatherRequest, fetch_hourly_weather
-
-def reverse_geocode(lat: float, lon: float) -> str:
-    url = "https://nominatim.openstreetmap.org/reverse"
-
-    params = {
-        "lat": lat,
-        "lon": lon,
-        "format": "json",
-        "zoom": 10,
-        "addressdetails": 1,
-    }
-
-    headers = {
-        "User-Agent": "WanWalkApp"
-    }
-
-    try:
-        response = requests.get(
-            url,
-            params=params,
-            headers=headers,
-            timeout=10,
-        )
-        response.raise_for_status()
-        data = response.json()
-
-        address = data.get("address", {})
-
-        return (
-            address.get("city")
-            or address.get("town")
-            or address.get("village")
-            or address.get("municipality")
-            or address.get("county")
-            or address.get("state_district")
-            or address.get("state")
-            or data.get("display_name")
-            or "現在地"
-        )
-
-    #except Exception:
-    #    return "現在地"
-    except Exception as e:
-        st.error(f"逆ジオコーディングに失敗しました: {e}")
-        return "現在地"
 
 st.set_page_config(
     page_title="犬の散歩用アスファルト温度予測",
@@ -67,17 +23,6 @@ locations = {
     "鎌倉市": {"lat": 35.3192, "lon": 139.5467},
     "藤沢市": {"lat": 35.3392, "lon": 139.4900},
 }
-
-st.subheader("📍 地点設定")
-
-location_name = st.selectbox(
-    "📍 地点を選択",
-    list(locations.keys()),
-    index=0,
-)
-
-latitude = locations[location_name]["lat"]
-longitude = locations[location_name]["lon"]
 
 #use_current_location = st.checkbox("現在地を使う")
 
@@ -101,21 +46,26 @@ longitude = locations[location_name]["lon"]
 forecast_days = 2
 max_walk_temp = 30.0
 
-st.title("🐕 Wan Walk")
-st.caption("犬の散歩向け・路面温度予測")
+col_logo, col_title = st.columns([1.5, 8])
+
+with col_logo:
+    st.image("assets/shiba_logo.png", width=120)
+
+with col_title:
+    st.markdown("# Wan Walk")
+    st.caption("犬の散歩向け・路面温度予測")
+
+with st.expander("📍 地点設定", expanded=False):
+    location_name = st.selectbox(
+        "📍 地点を選択",
+        list(locations.keys()),
+        index=0,
+    )
+    
+    latitude = locations[location_name]["lat"]
+    longitude = locations[location_name]["lon"]
+
 st.caption(f"📍 {location_name}")
-
-#with st.sidebar:
-    #st.header("地点設定")
-
-    #st.header("推定係数")
-    #max_solar_gain_c = st.slider("日射による最大上昇", 5.0, 40.0, 24.0, 1.0)
-    #wind_cooling_factor = st.slider("風による冷却係数", 0.0, 1.0, 0.22, 0.01)
-    #rain_cooling_factor = st.slider("雨による冷却係数", 0.0, 10.0, 4.0, 0.5)
-    #heat_memory = st.slider("蓄熱の残りやすさ", 0.0, 0.95, 0.62, 0.01)
-    #safety_margin_c = st.slider("安全マージン", 0.0, 8.0, 2.0, 0.5)
-
-    #max_walk_temp = st.slider("推奨散歩の上限温度", 25.0, 45.0, 35.0, 1.0)
 
 request = WeatherRequest(
     latitude=latitude,
@@ -151,26 +101,19 @@ current_risk = current["risk_level"]
 current_judgement = current["walk_judgement"]
 current_time = current["time"].strftime("%m/%d %H:%M")
 
+status_icon = {
+    "安全": "🟢",
+    "注意": "🟡",
+    "危険": "🟠",
+    }.get(current_risk, "🔴")
+
+status_message = {
+    "安全": "今なら散歩しやすい",
+    "注意": "短時間の散歩なら可",
+    "危険": "路面温度に注意",
+    }.get(current_risk, "散歩はおすすめしません")
+
 st.subheader(f"🐾 現在の状況（{current_time}時点）")
-
-from datetime import date
-
-col1, col2 = st.columns(2)
-
-with col1:
-    st.metric("🌡 現在の気温", f"{current_air:.1f}℃")
-
-with col2:
-    st.metric("🐾 現在の推定路面温度", f"{current_asphalt:.1f}℃")
-
-if current_risk == "安全":
-    st.success("🐾 今なら散歩しやすい")
-elif current_risk == "注意":
-    st.warning("🐾 短時間の散歩なら可")
-elif current_risk == "危険":
-    st.error("🐾 路面温度に注意")
-else:
-    st.error("🐾 散歩はおすすめしません")
 
 now_time = pd.Timestamp.now()
 
@@ -179,23 +122,44 @@ future_safe_df = display_df[
     & (display_df["asphalt_temp_c"] <= max_walk_temp)
 ]
 
-if current_asphalt <= max_walk_temp:
-    st.info("このあともしばらく散歩しやすい予想です")
-elif not future_safe_df.empty:
-    next_safe_time = future_safe_df.iloc[0]["time"]
-    hours_until = (next_safe_time - now_time).total_seconds() / 3600
+with st.container(border=True):
+    col1, col2 = st.columns(2)
 
-    st.info(
-        f"次に{max_walk_temp:.0f}℃以下になる予想："
-        f"{next_safe_time:%H:%M}頃\n\n"
-        f"あと約{hours_until:.1f}時間"
-    )
-else:
-    st.warning("予報期間内に散歩しやすい時間帯は見つかりません")
+    with col1:
+        st.metric("🌡 気温", f"{current_air:.1f}℃")
+
+    with col2:
+        st.metric("🐾 路面温度", f"{current_asphalt:.1f}℃")
+
+    if current_risk == "安全":
+        st.success("🟢 安全：今なら散歩しやすい")
+    elif current_risk == "注意":
+        st.warning("🟡 注意：短時間の散歩なら可")
+    elif current_risk == "危険":
+        st.error("🟠 危険：路面温度に注意")
+    else:
+        st.error("🔴 非常に危険：散歩はおすすめしません")
+
+    if current_asphalt <= max_walk_temp:
+        st.info("このあともしばらく散歩しやすい予想です")
+    elif not future_safe_df.empty:
+        next_safe_time = future_safe_df.iloc[0]["time"]
+        hours_until = (next_safe_time - now_time).total_seconds() / 3600
+
+        st.info(
+            f"次に{max_walk_temp:.0f}℃以下になる予想："
+            f"{next_safe_time:%H:%M}頃\n\n"
+            f"あと約{hours_until:.1f}時間"
+        )
+    else:
+        st.warning("予報期間内に散歩しやすい時間帯は見つかりません")
 
 today_df = display_df[
     display_df["time"].dt.date == date.today()
 ]
+
+if today_df.empty:
+    today_df = display_df
 
 today_max = today_df["asphalt_temp_c"].max()
 today_min = today_df["asphalt_temp_c"].min()
@@ -216,8 +180,6 @@ with col2:
         f"{today_min:.1f}℃"
     )
 
-latest = display_df.iloc[0]
-
 st.subheader("🐕 おすすめ散歩時間")
 
 windows = find_recommended_windows(
@@ -226,12 +188,18 @@ windows = find_recommended_windows(
 )
 
 if windows:
-    for w in windows:
-        st.success(f"🐾 {w}")
+    st.success(
+        f"🟢 次のおすすめ\n\n{windows[0]}"
+    )
+    if len(windows) > 1:
+        with st.expander("その他のおすすめ時間帯"):
+            for w in windows[1:]:
+                st.write(w)
 else:
     st.error("推奨できる時間帯はありません")
 
-st.subheader("アスファルト温度予測グラフ")
+st.subheader("📈 路面温度の推移")
+st.caption("左右にドラッグして時間帯を確認できます")
 
 fig = go.Figure()
 
@@ -277,15 +245,10 @@ y_min = max(0, y_min)
 y_max = min(60, max(y_max, 40))
 
 fig.update_layout(
-    yaxis=dict(
-        range=[y_min, y_max]
-    )
-)
-
-fig.update_layout(
     height=360,
     dragmode="pan",
     margin=dict(l=10, r=10, t=30, b=10),
+    yaxis=dict(range=[y_min, y_max]),
     legend=dict(
         orientation="h",
         yanchor="bottom",
@@ -303,10 +266,6 @@ fig.update_xaxes(
         display_df["time"].iloc[min(initial_hours, len(display_df) - 1)],
     ],
     tickformat="%H:%M",
-)
-
-fig.update_layout(
-    dragmode="pan",
 )
 
 st.plotly_chart(fig, width="stretch")
