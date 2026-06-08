@@ -70,6 +70,15 @@ locations = {
 
 st.subheader("📍 地点設定")
 
+location_name = st.selectbox(
+    "📍 地点を選択",
+    list(locations.keys()),
+    index=0,
+)
+
+latitude = locations[location_name]["lat"]
+longitude = locations[location_name]["lon"]
+
 #use_current_location = st.checkbox("現在地を使う")
 
 #if use_current_location:
