@@ -46,37 +46,17 @@ locations = {
 forecast_days = 2
 max_walk_temp = 30.0
 
-st.markdown(
-    """
-    <div style="
-        display:flex;
-        align-items:center;
-        justify-content:center;
-        gap:18px;
-        margin-top:20px;
-        margin-bottom:8px;
-    ">
-        <img src="assets/shiba_logo.png" style="width:72px;">
-        <div>
-            <div style="
-                font-size:2.4rem;
-                font-weight:700;
-                line-height:1.1;
-            ">
-                Wan Walk
-            </div>
-            <div style="
-                color:#666;
-                font-size:0.95rem;
-                margin-top:6px;
-            ">
-                犬の散歩向け・路面温度予測
-            </div>
-        </div>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
+left, center, right = st.columns([1, 3, 1])
+
+with center:
+    col_logo, col_title = st.columns([1, 4])
+
+    with col_logo:
+        st.image("assets/shiba_logo.png", width=80)
+
+    with col_title:
+        st.markdown("## Wan Walk")
+        st.caption("犬の散歩向け・路面温度予測")
 
 with st.expander("📍 地点設定", expanded=False):
     location_name = st.selectbox(
