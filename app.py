@@ -17,6 +17,9 @@ st.set_page_config(
     layout="wide",
 )
 
+if "measurements" not in st.session_state:
+    st.session_state.measurements = []
+
 st.markdown("""
 <style>
 
@@ -369,6 +372,76 @@ detail_df = detail_df.rename(
 
 with st.expander("時間別データを見る"):
     st.dataframe(detail_df, width="stretch")
+
+st.subheader("📝 実測メモ")
+
+with st.expander("実測値を記録する"):
+    measured_temp = st.number_input(
+        "実測した路面温度（℃）",
+        min_value=0.0,
+        max_value=90.0,
+        step=0.1,
+        format="%.1f",
+    )
+
+    surface_type = st.selectbox(
+        "測定した場所",
+        ["アスファルト", "コンクリート", "芝生", "土", "その他"],
+    )
+
+    memo = st.text_input(
+        "メモ",
+        placeholder="例：直射日光、日陰、雨上がり など",
+    )
+
+    if st.button("実測値を確認"):
+        diff = measured_temp - current_asphalt
+
+        st.write(f"予測路面温度：{current_asphalt:.1f}℃")
+        st.write(f"実測路面温度：{measured_temp:.1f}℃")
+        st.write(f"差分：{diff:+.1f}℃")
+
+    if st.button("記録する"):
+        diff = measured_temp - current_asphalt
+
+        st.session_state.measurements.append(
+            {
+                "日時": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M"),
+                "地点": location_name,
+                "予測温度": round(current_asphalt, 1),
+                "実測温度": round(measured_temp, 1),
+                "差分": round(diff, 1),
+                "路面": surface_type,
+                "メモ": memo,
+            }
+        )
+
+        st.success("記録しました")
+
+    if st.session_state.measurements:
+
+        st.subheader("📋 実測履歴")
+
+        history_df = pd.DataFrame(
+            st.session_state.measurements
+        )
+
+        st.dataframe(
+            history_df,
+            width="stretch"
+        )
+
+        csv = history_df.to_csv(
+            index=False,
+            encoding="utf-8-sig"
+        ).encode("utf-8-sig")
+
+        st.download_button(
+            "📥 履歴CSVダウンロード",
+            csv,
+            file_name="wanwalk_measurements.csv",
+            mime="text/csv",
+        )
 
 st.info(
     "この推定は実測値ではありません。特に夏場は、実際の路面を手で触るか赤外線温度計で確認してください。"

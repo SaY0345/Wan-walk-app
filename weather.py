@@ -62,9 +62,6 @@ def fetch_hourly_weather(req: WeatherRequest) -> pd.DataFrame:
         timeout=20,
     )
 
-    print(response.status_code)
-    print(response.text[:300])
-
     response = requests.get(url, params=params, timeout=20)
     response.raise_for_status()
     data = response.json()
