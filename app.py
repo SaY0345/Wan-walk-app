@@ -11,10 +11,12 @@ from measurements import (
     DEFAULT_SHEET_WORKSHEET,
     MANUAL_SOURCE_LABEL,
     append_measurement,
+    append_measurement_to_apps_script,
     append_measurement_to_google_sheet,
     build_calibration_summary,
     build_coefficient_review,
     get_measurement_storage_status,
+    load_apps_script_measurements,
     load_google_sheet_measurements,
     load_measurements,
     summarize_measurements,
@@ -31,6 +33,18 @@ st.set_page_config(
 
 
 def resolve_measurement_storage():
+    wanwalk_secrets = st.secrets.get("wanwalk", {})
+    apps_script_url = wanwalk_secrets.get("apps_script_url")
+    if apps_script_url:
+        return {
+            "backend": "apps-script",
+            "service_account_info": None,
+            "spreadsheet_id": None,
+            "worksheet_name": wanwalk_secrets.get("worksheet_name", DEFAULT_SHEET_WORKSHEET),
+            "apps_script_url": apps_script_url,
+            "apps_script_token": wanwalk_secrets.get("apps_script_token"),
+        }
+
     if (
         "google_service_account" in st.secrets
         and "wanwalk" in st.secrets
@@ -42,6 +56,8 @@ def resolve_measurement_storage():
             "service_account_info": dict(st.secrets["google_service_account"]),
             "spreadsheet_id": st.secrets["wanwalk"]["spreadsheet_id"],
             "worksheet_name": worksheet_name,
+            "apps_script_url": None,
+            "apps_script_token": None,
         }
 
     return {
@@ -49,6 +65,8 @@ def resolve_measurement_storage():
         "service_account_info": None,
         "spreadsheet_id": None,
         "worksheet_name": DEFAULT_SHEET_WORKSHEET,
+        "apps_script_url": None,
+        "apps_script_token": None,
     }
 
 st.markdown("""
@@ -175,7 +193,7 @@ config = AsphaltModelConfig(
 measurement_storage = resolve_measurement_storage()
 storage_warning = ""
 extra_measurement_frames: list[pd.DataFrame] = []
-include_local_measurements = measurement_storage["backend"] != "google-sheets"
+include_local_measurements = measurement_storage["backend"] not in {"google-sheets", "apps-script"}
 
 if measurement_storage["backend"] == "google-sheets":
     try:
@@ -198,6 +216,31 @@ if measurement_storage["backend"] == "google-sheets":
             "service_account_info": None,
             "spreadsheet_id": None,
             "worksheet_name": DEFAULT_SHEET_WORKSHEET,
+            "apps_script_url": None,
+            "apps_script_token": None,
+        }
+elif measurement_storage["backend"] == "apps-script":
+    try:
+        extra_measurement_frames.append(
+            load_apps_script_measurements(
+                measurement_storage["apps_script_url"],
+                measurement_storage["apps_script_token"],
+            )
+        )
+        include_local_measurements = False
+    except Exception:
+        storage_warning = (
+            "Apps Script の読み込みに失敗したため、"
+            "ローカルCSV保存へ一時的にフォールバックしています"
+        )
+        include_local_measurements = True
+        measurement_storage = {
+            "backend": "local-csv",
+            "service_account_info": None,
+            "spreadsheet_id": None,
+            "worksheet_name": DEFAULT_SHEET_WORKSHEET,
+            "apps_script_url": None,
+            "apps_script_token": None,
         }
 
 measurement_history = load_measurements(
@@ -216,6 +259,7 @@ measurement_storage_status = get_measurement_storage_status(
     measurement_storage["backend"],
     spreadsheet_id=measurement_storage["spreadsheet_id"],
     worksheet_name=measurement_storage["worksheet_name"],
+    web_app_url=measurement_storage["apps_script_url"],
 )
 weather_request = WeatherRequest(
     latitude=latitude,
@@ -271,7 +315,7 @@ elif measurement_storage_status.is_persistent:
 else:
     st.caption(
         "実測保存先: ローカルCSV"
-        "（Streamlit Community Cloud で使う場合は Google Sheets 設定を推奨）"
+        "（Streamlit Community Cloud で使う場合は Apps Script または Google Sheets 設定を推奨）"
     )
 
 now_time = now
@@ -600,6 +644,12 @@ with st.expander("実測値を記録する"):
                     measurement_storage["service_account_info"],
                     measurement_storage["spreadsheet_id"],
                     measurement_storage["worksheet_name"],
+                )
+            elif measurement_storage["backend"] == "apps-script":
+                append_measurement_to_apps_script(
+                    record,
+                    measurement_storage["apps_script_url"],
+                    measurement_storage["apps_script_token"],
                 )
             else:
                 append_measurement(record)

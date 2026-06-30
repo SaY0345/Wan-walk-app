@@ -6,6 +6,7 @@ from typing import Any, Mapping
 
 import numpy as np
 import pandas as pd
+import requests
 
 from model import AsphaltModelConfig
 
@@ -35,6 +36,7 @@ MIN_COEFFICIENT_REVIEW_SAMPLES = 8
 IMPORTED_LOCATION_NAME = "取り込み実測"
 MANUAL_SOURCE_LABEL = "手入力"
 GOOGLE_SHEETS_SOURCE_LABEL = "Google Sheets"
+APPS_SCRIPT_SOURCE_LABEL = "Apps Script"
 DEFAULT_SHEET_WORKSHEET = "measurements"
 
 
@@ -184,16 +186,88 @@ def append_measurement_to_google_sheet(
     worksheet.append_row(row_values, value_input_option="USER_ENTERED")
 
 
+def load_apps_script_measurements(
+    web_app_url: str,
+    access_token: str | None = None,
+    timeout_seconds: int = 15,
+) -> pd.DataFrame:
+    params: dict[str, str] = {}
+    if access_token:
+        params["token"] = access_token
+
+    response = requests.get(web_app_url, params=params, timeout=timeout_seconds)
+    response.raise_for_status()
+    payload = response.json()
+
+    if isinstance(payload, dict):
+        if payload.get("status") not in (None, "ok"):
+            raise ValueError(payload.get("message", "Apps Script returned an error"))
+        rows = payload.get("rows", [])
+    elif isinstance(payload, list):
+        rows = payload
+    else:
+        raise ValueError("Apps Script response format is invalid")
+
+    if not rows:
+        return _empty_measurements_df()
+
+    df = pd.DataFrame(rows)
+    if df.empty:
+        return _empty_measurements_df()
+
+    if "データソース" not in df.columns:
+        df["データソース"] = APPS_SCRIPT_SOURCE_LABEL
+    else:
+        df["データソース"] = df["データソース"].replace("", APPS_SCRIPT_SOURCE_LABEL)
+    return _normalize_measurements(df)
+
+
+def append_measurement_to_apps_script(
+    record: dict[str, object],
+    web_app_url: str,
+    access_token: str | None = None,
+    timeout_seconds: int = 15,
+) -> None:
+    normalized_df = _normalize_measurements(pd.DataFrame([record], columns=MEASUREMENT_COLUMNS))
+    export_record = _export_measurements(normalized_df).iloc[0].fillna("").to_dict()
+
+    payload: dict[str, Any] = {"record": export_record}
+    if access_token:
+        payload["token"] = access_token
+
+    response = requests.post(web_app_url, json=payload, timeout=timeout_seconds)
+    response.raise_for_status()
+
+    if not response.content:
+        return
+
+    result = response.json()
+    if isinstance(result, dict) and result.get("status") not in (None, "ok"):
+        raise ValueError(result.get("message", "Apps Script returned an error"))
+
+
 def get_measurement_storage_status(
     backend: str,
     spreadsheet_id: str | None = None,
     worksheet_name: str = DEFAULT_SHEET_WORKSHEET,
+    web_app_url: str | None = None,
 ) -> MeasurementStorageStatus:
     if backend == "google-sheets":
         return MeasurementStorageStatus(
             backend=backend,
             label="Google Sheets",
             detail=f"Spreadsheet: {spreadsheet_id} / Worksheet: {worksheet_name}",
+            is_persistent=True,
+        )
+
+    if backend == "apps-script":
+        detail = "Apps Script Webアプリ"
+        if web_app_url:
+            detail = f"{detail} / {web_app_url}"
+        return MeasurementStorageStatus(
+            backend=backend,
+            label="Google Sheets (Apps Script)",
+            detail=detail,
             is_persistent=True,
         )
 

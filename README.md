@@ -22,8 +22,11 @@ streamlit run app.py
 
 ・自宅PCだけで使うなら、ローカル起動でも入力できます
 ・外出先からもスマホで入力するなら、private GitHub repo + private Streamlit app を想定しています
+・永続保存には Google Apps Script Webアプリか Google Sheets を使えます
+・Google Cloud のサービスアカウントを使いたくない場合は `apps_script_example.gs` の方式が軽量です
 ・永続保存には Google Sheets を使えます。設定例は `.streamlit/secrets.toml.example` を参照してください
 ・Google Sheets を使うと、実測値はスプレッドシートに保存され、アプリ再起動後も残ります
+・Apps Script Webアプリを使う場合も、実測値は Google スプレッドシートに保存され、アプリ再起動後も残ります
 ・Google Sheets 未設定時は `data/measurements.csv` に保存します
 
 ## 精度改善の流れ
