@@ -197,7 +197,7 @@ def load_apps_script_measurements(
 
     response = requests.get(web_app_url, params=params, timeout=timeout_seconds)
     response.raise_for_status()
-    payload = response.json()
+    payload = _parse_apps_script_response(response)
 
     if isinstance(payload, dict):
         if payload.get("status") not in (None, "ok"):
@@ -241,7 +241,7 @@ def append_measurement_to_apps_script(
     if not response.content:
         return
 
-    result = response.json()
+    result = _parse_apps_script_response(response)
     if isinstance(result, dict) and result.get("status") not in (None, "ok"):
         raise ValueError(result.get("message", "Apps Script returned an error"))
 
@@ -635,3 +635,14 @@ def _ensure_google_sheet_header(worksheet) -> None:
         return
 
     worksheet.update("A1", [MEASUREMENT_COLUMNS])
+
+
+def _parse_apps_script_response(response: requests.Response) -> Any:
+    try:
+        return response.json()
+    except ValueError as exc:
+        body_preview = response.text.strip().replace("\n", " ")
+        body_preview = body_preview[:160]
+        raise ValueError(
+            f"Apps Script response was not JSON (status {response.status_code}): {body_preview}"
+        ) from exc

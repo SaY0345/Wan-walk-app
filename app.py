@@ -205,10 +205,11 @@ if measurement_storage["backend"] == "google-sheets":
             )
         )
         include_local_measurements = False
-    except Exception:
+    except Exception as exc:
         storage_warning = (
             "Google Sheets の読み込みに失敗したため、"
             "ローカルCSV保存へ一時的にフォールバックしています"
+            f" ({type(exc).__name__}: {exc})"
         )
         include_local_measurements = True
         measurement_storage = {
@@ -228,10 +229,11 @@ elif measurement_storage["backend"] == "apps-script":
             )
         )
         include_local_measurements = False
-    except Exception:
+    except Exception as exc:
         storage_warning = (
             "Apps Script の読み込みに失敗したため、"
             "ローカルCSV保存へ一時的にフォールバックしています"
+            f" ({type(exc).__name__}: {exc})"
         )
         include_local_measurements = True
         measurement_storage = {
