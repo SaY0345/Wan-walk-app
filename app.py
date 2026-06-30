@@ -7,7 +7,7 @@ import streamlit as st
 import plotly.graph_objects as go
 #from streamlit_geolocation import streamlit_geolocation
 
-from measurements import (
+from wanwalk_measurements import (
     DEFAULT_SHEET_WORKSHEET,
     MANUAL_SOURCE_LABEL,
     append_measurement,
