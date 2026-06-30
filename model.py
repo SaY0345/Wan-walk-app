@@ -74,6 +74,8 @@ def _solar_gain_from_radiation(shortwave_radiation_wm2: float, max_gain: float) 
 def estimate_asphalt_temperature(
     weather_df: pd.DataFrame,
     config: AsphaltModelConfig | None = None,
+    calibration_slope: float = 1.0,
+    calibration_intercept_c: float = 0.0,
 ) -> pd.DataFrame:
     """
     時間別気象データから推定アスファルト温度を計算する。
@@ -81,6 +83,8 @@ def estimate_asphalt_temperature(
     Args:
         weather_df: fetch_hourly_weather() の戻り値
         config: 係数設定
+        calibration_slope: 実測履歴から得た補正傾き
+        calibration_intercept_c: 実測履歴から得た補正切片
 
     Returns:
         元データに asphalt_temp_c, risk_level, walk_judgement を追加した DataFrame
@@ -120,7 +124,10 @@ def estimate_asphalt_temperature(
             previous = smoothed[-1]
             smoothed.append(cfg.heat_memory * previous + (1 - cfg.heat_memory) * raw)
 
-    df["asphalt_temp_c"] = np.round(smoothed, 1)
+    base_estimates = np.array(smoothed)
+    calibrated = base_estimates * calibration_slope + calibration_intercept_c
+    df["base_asphalt_temp_c"] = np.round(base_estimates, 1)
+    df["asphalt_temp_c"] = np.round(calibrated, 1)
     df["risk_level"] = df["asphalt_temp_c"].apply(classify_risk)
     df["walk_judgement"] = df["asphalt_temp_c"].apply(walk_judgement)
 

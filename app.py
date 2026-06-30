@@ -3,13 +3,25 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 #import requests
-from datetime import date
 
 import plotly.graph_objects as go
 #from streamlit_geolocation import streamlit_geolocation
 
+from measurements import (
+    DEFAULT_SHEET_WORKSHEET,
+    MANUAL_SOURCE_LABEL,
+    append_measurement,
+    append_measurement_to_google_sheet,
+    build_calibration_summary,
+    build_coefficient_review,
+    get_measurement_storage_status,
+    load_google_sheet_measurements,
+    load_measurements,
+    summarize_measurements,
+    summarize_source_counts,
+)
 from model import AsphaltModelConfig, estimate_asphalt_temperature, find_recommended_windows
-from weather import WeatherRequest, fetch_hourly_weather
+from weather import WeatherRequest, get_hourly_weather
 
 st.set_page_config(
     page_title="犬の散歩用アスファルト温度予測",
@@ -17,8 +29,27 @@ st.set_page_config(
     layout="wide",
 )
 
-if "measurements" not in st.session_state:
-    st.session_state.measurements = []
+
+def resolve_measurement_storage():
+    if (
+        "google_service_account" in st.secrets
+        and "wanwalk" in st.secrets
+        and "spreadsheet_id" in st.secrets["wanwalk"]
+    ):
+        worksheet_name = st.secrets["wanwalk"].get("worksheet_name", DEFAULT_SHEET_WORKSHEET)
+        return {
+            "backend": "google-sheets",
+            "service_account_info": dict(st.secrets["google_service_account"]),
+            "spreadsheet_id": st.secrets["wanwalk"]["spreadsheet_id"],
+            "worksheet_name": worksheet_name,
+        }
+
+    return {
+        "backend": "local-csv",
+        "service_account_info": None,
+        "spreadsheet_id": None,
+        "worksheet_name": DEFAULT_SHEET_WORKSHEET,
+    }
 
 st.markdown("""
 <style>
@@ -69,6 +100,9 @@ html, body, [class*="css"] {
 </style>
 """, unsafe_allow_html=True)
 
+if st.session_state.pop("measurement_saved", False):
+    st.success("実測値を保存しました")
+
 locations = {
     "横須賀市": {"lat": 35.2813, "lon": 139.6722},
     "横浜市": {"lat": 35.4437, "lon": 139.6380},
@@ -97,8 +131,6 @@ locations = {
 
 forecast_days = 2
 max_walk_temp = 30.0
-
-left, center, right = st.columns([1, 3, 1])
 
 st.markdown("## Wan Walk")
 st.caption("犬の散歩向け・路面温度予測")
@@ -132,12 +164,6 @@ with st.expander("📍 地点変更", expanded=False):
 latitude = locations[location_name]["lat"]
 longitude = locations[location_name]["lon"]
 
-request = WeatherRequest(
-    latitude=latitude,
-    longitude=longitude,
-    forecast_days=forecast_days,
-)
-
 config = AsphaltModelConfig(
     #max_solar_gain_c=max_solar_gain_c,
     #wind_cooling_factor=wind_cooling_factor,
@@ -146,54 +172,109 @@ config = AsphaltModelConfig(
     #safety_margin_c=safety_margin_c,
 )
 
-@st.cache_data(ttl=21600)
-def cached_fetch_hourly_weather(latitude: float, longitude: float, forecast_days: int):
-    request = WeatherRequest(
-        latitude=latitude,
-        longitude=longitude,
-        forecast_days=forecast_days,
-    )
-    return fetch_hourly_weather(request)
+measurement_storage = resolve_measurement_storage()
+storage_warning = ""
+extra_measurement_frames: list[pd.DataFrame] = []
+include_local_measurements = measurement_storage["backend"] != "google-sheets"
+
+if measurement_storage["backend"] == "google-sheets":
+    try:
+        extra_measurement_frames.append(
+            load_google_sheet_measurements(
+                measurement_storage["service_account_info"],
+                measurement_storage["spreadsheet_id"],
+                measurement_storage["worksheet_name"],
+            )
+        )
+        include_local_measurements = False
+    except Exception:
+        storage_warning = (
+            "Google Sheets の読み込みに失敗したため、"
+            "ローカルCSV保存へ一時的にフォールバックしています"
+        )
+        include_local_measurements = True
+        measurement_storage = {
+            "backend": "local-csv",
+            "service_account_info": None,
+            "spreadsheet_id": None,
+            "worksheet_name": DEFAULT_SHEET_WORKSHEET,
+        }
+
+measurement_history = load_measurements(
+    include_local=include_local_measurements,
+    extra_frames=extra_measurement_frames,
+)
+calibration = build_calibration_summary(measurement_history, location_name)
+coefficient_review = build_coefficient_review(
+    measurement_history,
+    location_name,
+    base_config=config,
+)
+active_config = coefficient_review.recommended_config if coefficient_review.is_active else config
+imported_count, manual_count = summarize_source_counts(measurement_history)
+measurement_storage_status = get_measurement_storage_status(
+    measurement_storage["backend"],
+    spreadsheet_id=measurement_storage["spreadsheet_id"],
+    worksheet_name=measurement_storage["worksheet_name"],
+)
+weather_request = WeatherRequest(
+    latitude=latitude,
+    longitude=longitude,
+    forecast_days=forecast_days,
+)
 
 try:
-    weather_df = cached_fetch_hourly_weather(
-        latitude,
-        longitude,
-        forecast_days,
+    weather_result = get_hourly_weather(weather_request)
+    weather_df = weather_result.weather_df
+    result_df = estimate_asphalt_temperature(
+        weather_df,
+        active_config,
+        calibration_slope=calibration.slope,
+        calibration_intercept_c=calibration.intercept_c,
     )
-    result_df = estimate_asphalt_temperature(weather_df, config)
-except Exception as exc:
+except Exception:
     st.error("気象データを取得できませんでした。時間をおいて再度お試しください。")
-    #st.exception(exc)
     st.stop()
 
 # 現在以降だけ表示
 now = pd.Timestamp.now(tz="Asia/Tokyo").tz_localize(None)
 display_df = result_df[result_df["time"] >= now.floor("h")].copy()
+if display_df.empty:
+    display_df = result_df.tail(24).copy()
 
 current = display_df.iloc[0]
 
 current_air = current["air_temp_c"]
+current_base_asphalt = current["base_asphalt_temp_c"]
 current_asphalt = current["asphalt_temp_c"]
 current_risk = current["risk_level"]
-current_judgement = current["walk_judgement"]
 current_time = current["time"].strftime("%m/%d %H:%M")
-
-status_icon = {
-    "安全": "🟢",
-    "注意": "🟡",
-    "危険": "🟠",
-    }.get(current_risk, "🔴")
-
-status_message = {
-    "安全": "今なら散歩しやすい",
-    "注意": "短時間の散歩なら可",
-    "危険": "路面温度に注意",
-    }.get(current_risk, "散歩はおすすめしません")
 
 st.subheader(f"🐾 現在の状況（{current_time}時点）")
 
-now_time = pd.Timestamp.now()
+weather_fetched_local = weather_result.fetched_at.tz_convert("Asia/Tokyo")
+if weather_result.is_stale_fallback:
+    st.warning(
+        f"最新の気象データ再取得に失敗したため、"
+        f"{weather_fetched_local:%m/%d %H:%M} 取得のキャッシュで表示しています"
+    )
+else:
+    st.caption(
+        f"気象データ更新: {weather_fetched_local:%m/%d %H:%M}"
+        f" ({weather_result.source}, 経過 {weather_result.age_minutes:.0f}分)"
+    )
+
+if storage_warning:
+    st.warning(storage_warning)
+elif measurement_storage_status.is_persistent:
+    st.caption(f"実測保存先: {measurement_storage_status.label} ({measurement_storage_status.detail})")
+else:
+    st.caption(
+        "実測保存先: ローカルCSV"
+        "（Streamlit Community Cloud で使う場合は Google Sheets 設定を推奨）"
+    )
+
+now_time = now
 
 future_safe_df = display_df[
     (display_df["time"] > now_time)
@@ -232,8 +313,41 @@ with st.container(border=True):
     else:
         st.warning("予報期間内に散歩しやすい時間帯は見つかりません")
 
+if calibration.is_active:
+    st.caption(
+        f"実測補正: {calibration.scope_label} {calibration.sample_count}件"
+        f"（取込 {calibration.imported_sample_count}件 / 手入力 {calibration.manual_sample_count}件）をもとに "
+        f"{calibration.method_label} {calibration.equation_text} を適用中 "
+        f"（平均ずれ {calibration.baseline_mae_c:.1f}℃ → {calibration.mae_c:.1f}℃）"
+    )
+elif calibration.sample_count:
+    st.caption(
+        f"実測 {calibration.sample_count}件を確認済みです。"
+        f"現在の予測の平均ずれは {calibration.baseline_mae_c:.1f}℃ でした"
+    )
+else:
+    asphalt_count = imported_count + manual_count
+    remaining = max(0, 3 - asphalt_count)
+    st.caption(
+        "アスファルト実測が3件以上たまると補正が有効になります"
+        + (f"（あと{remaining}件）" if remaining else "")
+    )
+
+if coefficient_review.is_active:
+    st.caption(
+        f"係数再検証: {coefficient_review.scope_label} {coefficient_review.sample_count}件をもとに "
+        f"平均ずれ {coefficient_review.baseline_mae_c:.1f}℃ → {coefficient_review.reviewed_mae_c:.1f}℃ "
+        f"となる係数を適用中"
+    )
+elif coefficient_review.sample_count:
+    remaining = max(0, 8 - coefficient_review.sample_count)
+    st.caption(
+        f"係数再検証用の手入力実測は {coefficient_review.sample_count}件です"
+        + (f"（あと{remaining}件で自動見直し開始）" if remaining else "")
+    )
+
 today_df = display_df[
-    display_df["time"].dt.date == date.today()
+    display_df["time"].dt.date == now.date()
 ]
 
 if today_df.empty:
@@ -373,6 +487,58 @@ detail_df = detail_df.rename(
 with st.expander("時間別データを見る"):
     st.dataframe(detail_df, width="stretch")
 
+with st.expander("🧪 係数の再検証状況", expanded=False):
+    review_col1, review_col2 = st.columns(2)
+    review_col1.metric("手入力実測", f"{coefficient_review.sample_count}件")
+    review_col2.metric(
+        "改善量",
+        f"{coefficient_review.improvement_c:+.1f}℃" if coefficient_review.sample_count else "-",
+    )
+
+    if coefficient_review.sample_count:
+        st.caption(coefficient_review.scope_label or "手入力実測")
+        review_table = pd.DataFrame(
+            [
+                {
+                    "係数": "日射上乗せ",
+                    "現在": round(config.max_solar_gain_c, 2),
+                    "推奨": round(coefficient_review.recommended_config.max_solar_gain_c, 2),
+                    "差分": coefficient_review.delta_solar_gain_c,
+                },
+                {
+                    "係数": "風冷却",
+                    "現在": round(config.wind_cooling_factor, 3),
+                    "推奨": round(coefficient_review.recommended_config.wind_cooling_factor, 3),
+                    "差分": coefficient_review.delta_wind_cooling_factor,
+                },
+                {
+                    "係数": "雨冷却",
+                    "現在": round(config.rain_cooling_factor, 3),
+                    "推奨": round(coefficient_review.recommended_config.rain_cooling_factor, 3),
+                    "差分": coefficient_review.delta_rain_cooling_factor,
+                },
+                {
+                    "係数": "夜間冷却",
+                    "現在": round(config.night_cooling_c, 2),
+                    "推奨": round(coefficient_review.recommended_config.night_cooling_c, 2),
+                    "差分": coefficient_review.delta_night_cooling_c,
+                },
+                {
+                    "係数": "安全マージン",
+                    "現在": round(config.safety_margin_c, 2),
+                    "推奨": round(coefficient_review.recommended_config.safety_margin_c, 2),
+                    "差分": coefficient_review.delta_safety_margin_c,
+                },
+            ]
+        )
+        st.dataframe(review_table, width="stretch", hide_index=True)
+        st.write(
+            f"補正前平均ずれ: {coefficient_review.baseline_mae_c:.1f}℃ / "
+            f"再検証後見込み: {coefficient_review.reviewed_mae_c:.1f}℃"
+        )
+    else:
+        st.write("手入力の実測データがまだ少ないため、係数の自動見直しは始まっていません。")
+
 st.subheader("📝 実測メモ")
 
 with st.expander("実測値を記録する"):
@@ -395,43 +561,111 @@ with st.expander("実測値を記録する"):
     )
 
     if st.button("実測値を確認"):
-        diff = measured_temp - current_asphalt
+        display_diff = measured_temp - current_asphalt
+        learning_diff = measured_temp - current_base_asphalt
 
-        st.write(f"予測路面温度：{current_asphalt:.1f}℃")
+        st.write(f"表示中の予測路面温度：{current_asphalt:.1f}℃")
+        if round(current_base_asphalt, 1) != round(current_asphalt, 1):
+            st.write(f"補正前の基準予測：{current_base_asphalt:.1f}℃")
         st.write(f"実測路面温度：{measured_temp:.1f}℃")
-        st.write(f"差分：{diff:+.1f}℃")
+        st.write(f"表示予測との差分：{display_diff:+.1f}℃")
+        if round(current_base_asphalt, 1) != round(current_asphalt, 1):
+            st.write(f"補正前予測との差分：{learning_diff:+.1f}℃")
 
     if st.button("記録する"):
-        diff = measured_temp - current_asphalt
+        diff = measured_temp - current_base_asphalt
 
-        st.session_state.measurements.append(
-            {
-                "日時": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M"),
-                "地点": location_name,
-                "予測温度": round(current_asphalt, 1),
-                "実測温度": round(measured_temp, 1),
-                "差分": round(diff, 1),
-                "路面": surface_type,
-                "メモ": memo,
-            }
-        )
+        record = {
+            "日時": pd.Timestamp.now(tz="Asia/Tokyo").tz_localize(None).strftime("%Y-%m-%d %H:%M"),
+            "地点": location_name,
+            "予測温度": round(current_base_asphalt, 1),
+            "補正後予測温度": round(current_asphalt, 1),
+            "実測温度": round(measured_temp, 1),
+            "差分": round(diff, 1),
+            "路面": surface_type,
+            "メモ": memo,
+            "データソース": MANUAL_SOURCE_LABEL,
+            "気温": round(current_air, 1),
+            "雲量": round(float(current["cloud_cover_pct"]), 1),
+            "風速": round(float(current["wind_speed_kmh"]), 1),
+            "降水量": round(float(current["precip_mm"]), 1),
+            "日射": round(float(current["shortwave_radiation_wm2"]), 1),
+            "昼フラグ": int(current["is_day"]),
+        }
 
-        st.success("記録しました")
+        try:
+            if measurement_storage["backend"] == "google-sheets":
+                append_measurement_to_google_sheet(
+                    record,
+                    measurement_storage["service_account_info"],
+                    measurement_storage["spreadsheet_id"],
+                    measurement_storage["worksheet_name"],
+                )
+            else:
+                append_measurement(record)
+        except Exception:
+            st.error("実測値の保存に失敗しました。保存先設定を確認してください。")
+        else:
+            st.session_state.measurement_saved = True
+            st.rerun()
 
-    if st.session_state.measurements:
-
+    history_df, history_label = summarize_measurements(measurement_history, location_name)
+    if not history_df.empty:
         st.subheader("📋 実測履歴")
 
-        history_df = pd.DataFrame(
-            st.session_state.measurements
+        history_asphalt_df = history_df[history_df["路面"] == "アスファルト"].dropna(subset=["差分"])
+        history_display_diff = (
+            history_asphalt_df["実測温度"]
+            - history_asphalt_df["補正後予測温度"].fillna(history_asphalt_df["予測温度"])
         )
+        metric_col1, metric_col2, metric_col3 = st.columns(3)
+        metric_col1.metric("記録件数", f"{len(history_df)}件")
 
+        if history_asphalt_df.empty:
+            metric_col2.metric("補正前平均ずれ", "-")
+            metric_col3.metric("表示予測平均ずれ", "-")
+        else:
+            metric_col2.metric("補正前平均ずれ", f"{history_asphalt_df['差分'].abs().mean():.1f}℃")
+            metric_col3.metric("表示予測平均ずれ", f"{history_display_diff.abs().mean():.1f}℃")
+
+        st.caption(history_label)
+
+        display_history_df = history_df.copy()
+        display_history_df["日時"] = display_history_df["日時"].dt.strftime("%Y-%m-%d %H:%M")
+        display_history_df["表示差分"] = (
+            display_history_df["実測温度"]
+            - display_history_df["補正後予測温度"].fillna(display_history_df["予測温度"])
+        ).round(1)
+        display_history_df = display_history_df.rename(
+            columns={
+                "予測温度": "予測(補正前)",
+                "補正後予測温度": "表示予測",
+                "差分": "補正前差分",
+                "データソース": "ソース",
+            }
+        )
+        display_history_df = display_history_df[
+            [
+                "日時",
+                "地点",
+                "予測(補正前)",
+                "表示予測",
+                "実測温度",
+                "補正前差分",
+                "表示差分",
+                "路面",
+                "メモ",
+                "ソース",
+            ]
+        ]
         st.dataframe(
-            history_df,
+            display_history_df,
             width="stretch"
         )
 
-        csv = history_df.to_csv(
+        csv_df = history_df.copy()
+        csv_df["日時"] = csv_df["日時"].dt.strftime("%Y-%m-%d %H:%M")
+        csv = csv_df.to_csv(
             index=False,
             encoding="utf-8-sig"
         ).encode("utf-8-sig")
